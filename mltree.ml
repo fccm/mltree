@@ -56,17 +56,18 @@ let ( +^ ) = Int64.add ;;
 (* }}} *)
 (* {{{ usage *)
 
-let usage() =
+let usage () =
   print_endline "
   display file times:
-    -mt  --modification-time
-    -at  --last-access-time
-    -ct  --status-change-time
+    -mt  -mtime  --modification-time
+    -at  -atime  --last-access-time
+    -ct  -ctime  --status-change-time
+    -t   -times  --all-times
 
   display with colors:
     -c  --colors
 ";
-  exit(1);
+  exit 1;
 ;;
 (* }}} *)
 (* {{{ round *)
@@ -111,22 +112,22 @@ let string_of_size =
   let s = Int64.to_float size in
   if s < 1000. then string_of_int(truncate s) else
   let k = s /. 1024. in
-  if k < 10.0 then Printf.sprintf "%.1fK" k else
+  if k < 9.95 then Printf.sprintf "%.1fK" k else
   if k < 1000. then Printf.sprintf "%dK" (round k) else
   let m = k /. 1024. in
-  if m < 10.0 then Printf.sprintf "%.1fM" m else
+  if m < 9.95 then Printf.sprintf "%.1fM" m else
   if m < 1000. then Printf.sprintf "%dM" (round m) else
   let g = m /. 1024. in
-  if g < 10.0 then Printf.sprintf "%.1fG" g else
+  if g < 9.95 then Printf.sprintf "%.1fG" g else
   if g < 1000. then Printf.sprintf "%dG" (round g) else
   let t = g /. 1024. in
-  if t < 10.0 then Printf.sprintf "%.1fT" t else
+  if t < 9.95 then Printf.sprintf "%.1fT" t else
   if t < 1000. then Printf.sprintf "%dT" (round t) else
   let p = t /. 1024. in
-  if p < 10.0 then Printf.sprintf "%.1fP" p else
+  if p < 9.95 then Printf.sprintf "%.1fP" p else
   if p < 1000. then Printf.sprintf "%dP" (round p) else
   let e = p /. 1024. in
-  if e < 10.0 then Printf.sprintf "%.1fE" e else
+  if e < 9.95 then Printf.sprintf "%.1fE" e else
   if e < 1000. then Printf.sprintf "%dE" (round e) else
   Printf.sprintf "%dE" (round e)
 ;;
@@ -202,7 +203,6 @@ let branch_dir_mark ~last =
 ;;
 (* }}} *)
 (* {{{ color *)
-let g = char_of_int 27 ;;
 (*    red  [31;49m Normal [0m
     green  [32;49m Normal [0m
    yellow  [33;49m Normal [0m
@@ -232,7 +232,7 @@ let color color_name ?(label="") str () =
   |   `white -> "37;49"
   | `default -> "39;49"
   in
-  Printf.sprintf "%c[%sm%s%s%c[00m" g col_code  label str  g
+  Printf.sprintf "\027[%sm%s%s\027[00m" col_code  label str
 ;;
 (* }}} *)
 (* {{{ human_perms *)
@@ -303,18 +303,16 @@ let dump_file ~name:(file_name) ~stats ~depth ~last ~options =
   let h_size = human_size ~size in
   let pad = padding ~last ~depth in
 
-  let show_times = true in
-
   if options.colors then begin
     Printf.printf "%s" (color `yellow (pad ^ (branch_mark ~last)) ());
     Printf.printf " %s" (color `purple ~label:"-" (human_perms ~perms) ());
   (*Printf.printf "%s " (color `purple ~label:"perms:" (Printf.sprintf "%03o" perms) ()); (* Octal *) *)
     Printf.printf " %s"  (color `dark_red h_size ());
     Printf.printf " %s" (Filename.basename file_name);
-    if show_times then begin
+    begin
       if options.mt then Printf.printf "  %s" (color `dark_grey ~label:"mt:" (human_time mtime) ());
-      if options.at then Printf.printf "  %s" (color `dark_grey ~label:"at:" (human_time atime) ());
       if options.ct then Printf.printf "  %s" (color `dark_grey ~label:"ct:" (human_time ctime) ());
+      if options.at then Printf.printf "  %s" (color `dark_grey ~label:"at:" (human_time atime) ());
     end;
   end else begin
     Printf.printf "%s" (pad ^ (branch_mark ~last));
@@ -322,10 +320,10 @@ let dump_file ~name:(file_name) ~stats ~depth ~last ~options =
   (*Printf.printf "perms:%s " (Printf.sprintf "%03o" perms); (* Octal *) *)
     Printf.printf " %s"  (h_size);
     Printf.printf " %s" (Filename.basename file_name);
-    if show_times then begin
+    begin
       if options.mt then Printf.printf "  %s" ("mt:" ^ (human_time mtime));
-      if options.at then Printf.printf "  %s" ("at:" ^ (human_time atime));
       if options.ct then Printf.printf "  %s" ("ct:" ^ (human_time ctime));
+      if options.at then Printf.printf "  %s" ("at:" ^ (human_time atime));
     end;
   end;
   Printf.printf "\n";
@@ -371,11 +369,27 @@ let rec dump_dir ~name ~stats ~depth ~last ~options =
   let pad = padding ~last ~depth:(pred depth) in
 
   if options.colors then
-    Printf.printf "%s%s\n"  (* with colors *)
+    Printf.printf "%s%s "  (* with colors *)
         (color `yellow (pad ^ (branch_dir_mark ~last)) ())
         (color `blue_dir (parent_dir ^ "/") ())
   else
-    Printf.printf "%s%s%s/\n" pad (branch_dir_mark ~last) parent_dir;  (* without colors *)
+    Printf.printf "%s%s%s/ " pad (branch_dir_mark ~last) parent_dir;  (* without colors *)
+
+  let atime = stats.Unix.LargeFile.st_atime   (* Last access time *)
+  and mtime = stats.Unix.LargeFile.st_mtime   (* Last modification time *)
+  and ctime = stats.Unix.LargeFile.st_ctime   (* Last status change time *)
+  in
+  if options.colors then begin
+    if options.mt then Printf.printf "  %s" (color `dark_grey ~label:"mt:" (human_time mtime) ());
+    if options.ct then Printf.printf "  %s" (color `dark_grey ~label:"ct:" (human_time ctime) ());
+    if options.at then Printf.printf "  %s" (color `dark_grey ~label:"at:" (human_time atime) ());
+  end else begin
+    if options.mt then Printf.printf "  %s" ("mt:" ^ (human_time mtime));
+    if options.ct then Printf.printf "  %s" ("ct:" ^ (human_time ctime));
+    if options.at then Printf.printf "  %s" ("at:" ^ (human_time atime));
+  end;
+
+  Printf.printf "\n";
 
   let contents = Sys.readdir parent_dir in
   let contents = Array.to_list contents in
@@ -445,52 +459,38 @@ let boot_dump  base_dir ~options =
   let base_dir = strip_slash base_dir in
   let all_size = dump_dir ~name:base_dir ~stats ~depth:0 ~last:[] ~options in
   if options.colors then
-    Printf.printf "\n%s\n" (color `green ~label:"Total size:" (human_size all_size) ())
+    Printf.printf "\n%s\n" (color `green ~label:"Total size: " (human_size all_size) ())
   else
-    Printf.printf "\nTotal size:%s\n" (human_size all_size);
+    Printf.printf "\nTotal size: %s\n" (human_size all_size);
 ;;
 
 (* {{{ set options *)
 
 let options_set_colors ~options =
-  { colors = true;
-    hide = options.hide;
-    mt = options.mt;
-    at = options.at;
-    ct = options.ct }
-;;
+  { options with
+    colors = true }
 
 let options_set_mt ~options =
-  { colors = options.colors;
-    hide = options.hide;
-    mt = true;
-    at = options.at;
-    ct = options.ct }
-;;
+  { options with
+    mt = true }
 
 let options_set_at ~options =
-  { colors = options.colors;
-    hide = options.hide;
-    mt = options.mt;
-    at = true;
-    ct = options.ct }
-;;
+  { options with
+    at = true }
 
 let options_set_ct ~options =
-  { colors = options.colors;
-    hide = options.hide;
-    mt = options.mt;
-    at = options.at;
+  { options with
     ct = true }
-;;
+
+let options_set_times ~options =
+  { options with
+    mt = true;
+    at = true;
+    ct = true }
 
 let options_set_hide ~options =
-  { colors = options.colors;
-    hide = true;
-    mt = options.mt;
-    at = options.at;
-    ct = options.ct }
-;;
+  { options with
+    hide = true }
 
 (* }}} *)
 
@@ -508,12 +508,13 @@ let () =
       | "-mt" | "-mtime" | "--modification-time"  -> (yet, options_set_mt ~options)
       | "-at" | "-atime" | "--last-access-time"   -> (yet, options_set_at ~options)
       | "-ct" | "-ctime" | "--status-change-time" -> (yet, options_set_ct ~options)
+      | "-t" | "-times" | "--all-times" -> (yet, options_set_times ~options)
       | "-c" | "--colors" -> (yet, options_set_colors ~options)
       | "-l" -> (yet, options_set_hide ~options)
       | "--" -> (yet, blank_options)
       | "-h" | "--help" -> usage();
-      | _ -> Printf.fprintf stderr
-          "Warning: '%s' is not an existing directory, nor an option\n%!" d;
+      | _ -> Printf.eprintf "Warning: \
+               '%s' is not an existing directory, nor an option\n%!" d;
           (yet, options)
   in
   let rec parse_arg argi yet options =
