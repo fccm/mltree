@@ -1,7 +1,5 @@
 #!/usr/bin/env ocaml
-(* {{{ COPYING *)
-(*
- * +--------------------------------------------------------------------+
+(* +--------------------------------------------------------------------+
  * | Copyright (C) 2005 2006 Florent Monnier                            |
  * +--------------------------------------------------------------------+
  * | This is a small implementation of the 'tree' command-line utility. |
@@ -27,16 +25,13 @@
  * +--------------------------------------------------------------------+
  * | Author: Florent Monnier <fmonnier(¤)linux-nantes.fr.eu.org>        |
  * +--------------------------------------------------------------------+
- *
- * }}} *)
-(* {{{ Bugs & comments *)
-(*
+ *)
+(* Bugs & comments
  * This script is bugged!
  * But calling it on /home or /usr
  * with the option --colors
  * outputs a nice display on screen :)
- *
-)* }}} *)
+ *)
 (* {{{ utils/types/inits *)
 
 #load "unix.cma"
@@ -333,9 +328,9 @@ let dump_file ~name:(file_name) ~stats ~depth ~last ~options =
 (* }}} *)
 (* {{{ dump_file_list *)
 
-let dump_file_list  ~files ~dirs ~parent_dir ~depth ~last ~options =
+let dump_file_list  ~files ~links ~dirs ~parent_dir ~depth ~last ~options =
 
-  let rec file_loop ~files ~dirs size_acc =
+  let rec file_loop ~files ~links ~dirs size_acc =
     match files, dirs with
     | [], [] | [], _ ->   (* this case matches a directory containing sub-directories *)
         dump_total_size ~size:(size_acc) ~depth ~last ~options;
@@ -353,9 +348,9 @@ let dump_file_list  ~files ~dirs ~parent_dir ~depth ~last ~options =
         let file_size = dump_file
           ~name:(concat parent_dir file_name) ~stats ~depth ~last:(false::last) ~options
         in
-        file_loop ~files:tail_files ~dirs (file_size +^ size_acc)
+        file_loop ~files:tail_files ~links ~dirs (file_size +^ size_acc)
   in
-  file_loop ~files ~dirs 0L;
+  file_loop ~files ~links ~dirs 0L;
 ;;
 
 (* }}} *)
@@ -393,28 +388,41 @@ let rec dump_dir ~name ~stats ~depth ~last ~options =
 
   let contents = Sys.readdir parent_dir in
   let contents = Array.to_list contents in
-  let rec sort c ~reg_acc ~dir_acc =
+
+  let rec sort c ~reg_acc ~dir_acc ~lnk_acc =
     match c with
-    | [] -> (reg_acc, dir_acc)
+    | [] -> (reg_acc, lnk_acc, dir_acc)
     | name :: tl ->
         if options.hide && name.[0] = '.' then
-          sort tl ~dir_acc ~reg_acc
+          sort tl ~dir_acc ~reg_acc ~lnk_acc
         else
           let stats = Unix.LargeFile.lstat (concat parent_dir name) in
           match stats.Unix.LargeFile.st_kind with
           (* Accumulate directories and regular files in 2 different lists: dir_acc & reg_acc *)
-          | Unix.S_REG -> sort tl ~dir_acc ~reg_acc:((name,stats) :: reg_acc)
-          | Unix.S_DIR -> sort tl ~reg_acc ~dir_acc:((name,stats) :: dir_acc)
-          | Unix.S_LNK | Unix.S_CHR | Unix.S_BLK | Unix.S_FIFO | Unix.S_SOCK ->
-              sort tl ~dir_acc ~reg_acc  (* TODO: handle these *)
+          | Unix.S_REG -> sort tl ~dir_acc ~lnk_acc ~reg_acc:((name,stats) :: reg_acc)
+          | Unix.S_DIR -> sort tl ~reg_acc ~lnk_acc ~dir_acc:((name,stats) :: dir_acc)
+          | Unix.S_LNK -> sort tl ~reg_acc ~dir_acc ~lnk_acc:((name,stats) :: lnk_acc)
+          | Unix.S_CHR | Unix.S_BLK | Unix.S_FIFO | Unix.S_SOCK ->
+              sort tl ~dir_acc ~reg_acc ~lnk_acc  (* TODO: handle these *)
+          (*
+          file_kind
+          | S_REG    (** Regular file *)
+          | S_DIR    (** Directory *)
+          | S_CHR    (** Character device *)
+          | S_BLK    (** Block device *)
+          | S_LNK    (** Symbolic link *)
+          | S_FIFO   (** Named pipe *)
+          | S_SOCK   (** Socket *)
+          *)
   in
-  let (files, dirs) = sort contents ~reg_acc:[] ~dir_acc:[] in
+  let files, links, dirs = sort contents ~reg_acc:[] ~lnk_acc:[] ~dir_acc:[] in
   let files = List.sort compare files
+  and links = List.sort compare links
   and dirs = List.sort compare dirs in
   let files = right_pad files in
 
   (* For a better readablility, the files are printed before directories contents. *)
-  let files_size = dump_file_list ~files ~dirs ~parent_dir ~depth ~last ~options in
+  let files_size = dump_file_list ~files ~links ~dirs ~parent_dir ~depth ~last ~options in
 
   (* {{{ print directories *)
   let rec dir_loop dirs size_acc =
@@ -497,7 +505,7 @@ let options_set_hide ~options =
 let () =
   let argc = Array.length Sys.argv
   and blank_options =
-    {colors=false; hide=false; mt=false; at=false; ct=false}
+    { colors=false; hide=false; mt=false; at=false; ct=false }
   in
 
   let this_dir d yet options =
