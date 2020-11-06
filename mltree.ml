@@ -217,6 +217,7 @@ let color color_name ?(label="") str () =
   | `purple    -> "03;35"
   | `dark_grey -> "01;30"
   | `test      -> "01;32"
+  | `light_cyan -> "01;36"
 
   |     `red -> "31;49"
   |   `green -> "32;49"
@@ -284,6 +285,21 @@ let human_time time =
       t.Unix.tm_min
 ;;
 (* }}} *)
+(* {{{ dump_link *)
+
+let dump_link link link_path ~depth ~last ~options =
+  let pad = padding ~last ~depth in
+  let dst = Unix.readlink link_path in
+  if options.colors then begin
+    Printf.printf "%s" (color `yellow (pad ^ (branch_mark ~last)) ());
+    let sym_link = (color `purple "symbolic-link:" ()) in
+    Printf.printf " %s  %s -> %s\n" sym_link (color `light_cyan link ()) dst
+  end else begin
+    Printf.printf "%s" (pad ^ (branch_mark ~last));
+    Printf.printf " symbolic-link:  %s -> %s\n" link dst
+  end
+
+(* }}} *)
 (* {{{ dump_file *)
 
 let dump_file ~name:(file_name) ~stats ~depth ~last ~options =
@@ -331,12 +347,12 @@ let dump_file ~name:(file_name) ~stats ~depth ~last ~options =
 let dump_file_list  ~files ~links ~dirs ~parent_dir ~depth ~last ~options =
 
   let rec file_loop ~files ~links ~dirs size_acc =
-    match files, dirs with
-    | [], [] | [], _ ->   (* this case matches a directory containing sub-directories *)
+    match files, links, dirs with
+    | [], [], [] | [], [], _ ->   (* this case matches a directory containing sub-directories *)
         dump_total_size ~size:(size_acc) ~depth ~last ~options;
         (size_acc)
 
-    | (file_name, stats)::[], [] ->  (* this case matches a file leaf *)
+    | (file_name, stats)::[], [], [] ->  (* this case matches a file leaf *)
         let file_size = dump_file
           ~name:(concat parent_dir file_name) ~stats ~depth ~last:(true::last) ~options
         in
@@ -344,11 +360,19 @@ let dump_file_list  ~files ~links ~dirs ~parent_dir ~depth ~last ~options =
         dump_total_size ~size:(total_size) ~depth ~last ~options;
         (total_size)
 
-    | (file_name, stats)::tail_files, dirs ->  (* iteration loop *)
+    | (file_name, stats)::tail_files, links, dirs ->  (* iteration loop *)
         let file_size = dump_file
           ~name:(concat parent_dir file_name) ~stats ~depth ~last:(false::last) ~options
         in
         file_loop ~files:tail_files ~links ~dirs (file_size +^ size_acc)
+
+    | [], link::[], dirs ->
+        dump_link link (concat parent_dir link) ~depth ~last:(true::last) ~options;
+        file_loop ~files:[] ~links:[] ~dirs size_acc
+
+    | [], link::links, dirs ->
+        dump_link link (concat parent_dir link) ~depth ~last:(false::last) ~options;
+        file_loop ~files:[] ~links ~dirs size_acc
   in
   file_loop ~files ~links ~dirs 0L;
 ;;
@@ -401,7 +425,7 @@ let rec dump_dir ~name ~stats ~depth ~last ~options =
           (* Accumulate directories and regular files in 2 different lists: dir_acc & reg_acc *)
           | Unix.S_REG -> sort tl ~dir_acc ~lnk_acc ~reg_acc:((name,stats) :: reg_acc)
           | Unix.S_DIR -> sort tl ~reg_acc ~lnk_acc ~dir_acc:((name,stats) :: dir_acc)
-          | Unix.S_LNK -> sort tl ~reg_acc ~dir_acc ~lnk_acc:((name,stats) :: lnk_acc)
+          | Unix.S_LNK -> sort tl ~reg_acc ~dir_acc ~lnk_acc:((name) :: lnk_acc)
           | Unix.S_CHR | Unix.S_BLK | Unix.S_FIFO | Unix.S_SOCK ->
               sort tl ~dir_acc ~reg_acc ~lnk_acc  (* TODO: handle these *)
           (*
