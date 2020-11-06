@@ -14,7 +14,7 @@
  * | damages arising from the use of this software.                     |
  * |                                                                    |
  * +--------------------------------------------------------------------+
- * | Author: Florent Monnier <fmonnier(¤)linux-nantes.fr.eu.org>        |
+ * | Author: Florent Monnier  <monnier.florent@gmail.com>               |
  * +--------------------------------------------------------------------+
  *)
 (* Bugs & comments
